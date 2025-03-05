@@ -1,0 +1,99 @@
+// This file is part of www.nand2tetris.org
+// and the book "The Elements of Computing Systems"
+// by Nisan and Schocken, MIT Press.
+// File name: projects/5/CPU.hdl
+/**
+ * The Hack Central Processing unit (CPU).
+ * Parses the binary code in the instruction input and executes it according to the
+ * Hack machine language specification. In the case of a C-instruction, computes the
+ * function specified by the instruction. If the instruction specifies to read a memory
+ * value, the inM input is expected to contain this value. If the instruction specifies
+ * to write a value to the memory, sets the outM output to this value, sets the addressM
+ * output to the target address, and asserts the writeM output (when writeM = 0, any
+ * value may appear in outM).
+ * If the reset input is 0, computes the address of the next instruction and sets the
+ * pc output to that value. If the reset input is 1, sets pc to 0.
+ * Note: The outM and writeM outputs are combinational: they are affected by the
+ * instruction's execution during the current cycle. The addressM and pc outputs are
+ * clocked: although they are affected by the instruction's execution, they commit to
+ * their new values only in the next cycle.
+ */
+CHIP CPU {
+
+    IN  inM[16],         // M value input  (M = contents of RAM[A])
+        instruction[16], // Instruction for execution
+        reset;           // Signals whether to re-start the current
+                         // program (reset==1) or continue executing
+                         // the current program (reset==0).
+
+    OUT outM[16],        // M value output
+        writeM,          // Write to M? 
+        addressM[15],    // Address in data memory (of M)
+        pc[15];          // address of next instruction
+
+    PARTS:
+    //alias for MSB and NotMSB
+    And(a=instruction[15], b=true, out=MSB);
+    //Not(in=instruction[0] , out=NotMSB);
+    //filter A/C instruct
+    Mux16(a=instruction, b=false, sel=MSB, out=AInstruct);
+    Mux(a=false, b=instruction[12], sel=MSB, out=CInstructA);
+    Mux(a=false, b=instruction[11], sel=MSB, out=CInstructC1);
+    Mux(a=false, b=instruction[10], sel=MSB, out=CInstructC2);
+    Mux(a=false, b=instruction[9], sel=MSB, out=CInstructC3);
+    Mux(a=false, b=instruction[8], sel=MSB, out=CInstructC4);
+    Mux(a=false, b=instruction[7], sel=MSB, out=CInstructC5);
+    Mux(a=false, b=instruction[6], sel=MSB, out=CInstructC6);
+    Mux(a=false, b=instruction[5], sel=MSB, out=CInstructD1);
+    Mux(a=false, b=instruction[4], sel=MSB, out=CInstructD2);
+    Mux(a=false, b=instruction[3], sel=MSB, out=CInstructD3);
+    Mux(a=false, b=instruction[2], sel=MSB, out=CInstructJ1);
+    Mux(a=false, b=instruction[1], sel=MSB, out=CInstructJ2);
+    Mux(a=false, b=instruction[0], sel=MSB, out=CInstructJ3);
+
+    //A-register input control
+    Mux16(a = AInstruct, b=ALUout,
+     sel=MSB, out=Ain );
+    Mux(a=true, b=instruction[5] , sel=MSB, out=writeA);
+    ARegister(in=Ain , load=writeA , out=Aout);
+    
+    //D-register input control
+    DRegister(in=ALUout, load=CInstructD2, out=Dout);
+    
+    //"M-register"
+    And(a=CInstructD3, b=true, out=writeM);
+    And16(a=Aout , b=true, out[0..14]=addressM);
+    And16(a=ALUout , b=true , out=outM);
+    //AlU input A/M
+    Mux16(a=Aout , b=inM, sel=CInstructA, out=AMout);
+    //ALU
+    ALU(x=Dout , y=AMout, zx=CInstructC1 , nx=CInstructC2,
+     zy=CInstructC3, ny=CInstructC4, f=CInstructC5, no=CInstructC6,
+     out=ALUout, zr=eq, ng=lt);
+    
+    //PC logic:
+    Not(in=eq, out=ne);
+    Not(in=lt, out=ge);
+    And(a=ne, b=ge, out=gt);
+    //Or(a=eq, b=gt, out=ge);
+    Or(a=eq, b=lt, out=le);
+	DMux8Way(in=MSB, sel[2]=CInstructJ1,sel[1]=CInstructJ2, sel[0]=CInstructJ3, 
+    a=null, b=jgt , c=jeq, d=jge, e=jlt, f=jne, g=jle, h=jmp);
+    And(a=null, b=false, out=l1);
+    And(a=jgt, b=gt, out=l2);
+    And(a=jeq, b=eq, out=l3);
+    And(a=jge, b=ge, out=l4);
+    And(a=jlt, b=lt, out=l5);
+    And(a=jne, b=ne, out=l6);
+    And(a=jle, b=le, out=l7);
+    And(a=jmp, b=true, out=l8);
+    Or(a=l1, b=l2, out=o1);
+    Or(a=o1, b=l3, out=o2);
+    Or(a=o2, b=l4, out=o3);
+    Or(a=o3, b=l5, out=o4);
+    Or(a=o4, b=l6, out=o5);
+    Or(a=o5, b=l7, out=o6);
+    Or(a=o6, b=l8, out=PCload);
+    PC(in=Aout, load=PCload, inc=true,
+     reset=reset, out[0..14]=pc);
+}
